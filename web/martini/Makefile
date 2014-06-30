@@ -1,4 +1,4 @@
 
 all:
-	go build -o gateway.bin gateway.go
+	go build -o gateway.bin *.go
 	./gateway.bin

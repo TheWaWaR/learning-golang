@@ -48,7 +48,7 @@ func main() {
 			r, g, b, _ := c.RGBA()
 			// println(fmt.Sprintf("r:%x, g:%x, b:%x", r, g, b))
 			
-			val := (r>>8)<<16 + (g>>8)<<8 + b>>8
+			val := (r>>8)<<16 & (g>>8)<<8 & b>>8
 			cnt, ok := colors[val]
 			if ok {
 				cnt += 1

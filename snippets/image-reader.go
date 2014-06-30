@@ -46,7 +46,8 @@ func main() {
 		for y := 0; y < rb.Y; y++ {
 			c := img.At(x, y)
 			r, g, b, _ := c.RGBA()
-			println(fmt.Sprintf("r:%x, g:%x, b:%x", r, g, b))
+			// println(fmt.Sprintf("r:%x, g:%x, b:%x", r, g, b))
+			
 			val := (r>>8)<<16 + (g>>8)<<8 + b>>8
 			cnt, ok := colors[val]
 			if ok {
@@ -74,13 +75,13 @@ func main() {
 	println(ccs)
 
 	for _, cc := range ccs {
-		println(fmt.Sprintf("val: %6x, cnt: %6d", cc.val, cc.cnt))
+		println(fmt.Sprintf("color: %7x  -->  count: %6d", cc.val, cc.cnt))
 		// fmt.Sprintf("val: %12d, cnt: %6d", cc.val, cc.cnt)
 	}
 	pixelCnt := rb.X * rb.Y
-	println("--------------------")
+	println("------------------------------")
 	last2_cnt := ccs[idx-1].cnt + ccs[idx-2].cnt
-	println(fmt.Sprintf("total==pixelCnt -> %t, maxCnt=%d, pixelCnt=%d \n >> prec=%f",
+	println(fmt.Sprintf(" > total==pixelCnt -> %t \n > maxCnt=%d, pixelCnt=%d \n >> prec=%f",
 		total==pixelCnt,
 		ccs[len(ccs)-1].cnt,
 		pixelCnt,

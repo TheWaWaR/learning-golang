@@ -31,6 +31,12 @@ func (a ByCount) Less(i int, j int) bool { return a[i].cnt < a[j].cnt }
 
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			println(fmt.Sprintf("%q", r))
+		}
+	}()
+	
 	png_fn := "test.png"
 	img, err := readPNG(png_fn)
 	if err != nil {}
@@ -46,9 +52,9 @@ func main() {
 		for y := 0; y < rb.Y; y++ {
 			c := img.At(x, y)
 			r, g, b, _ := c.RGBA()
-			// println(fmt.Sprintf("r:%x, g:%x, b:%x", r, g, b))
 			
-			val := (r>>8)<<16 & (g>>8)<<8 & b>>8
+			val := ((r>>8)<<16) | ((g>>8)<<8) | (b>>8)
+			// println(fmt.Sprintf("r:%x, g:%x, b:%x, val:%x", r, g, b, val))
 			cnt, ok := colors[val]
 			if ok {
 				cnt += 1

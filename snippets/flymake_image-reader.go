@@ -27,13 +27,7 @@ type ColorCounter struct {
 type ByCount []ColorCounter
 func (a ByCount) Len() int { return len(a) }
 func (a ByCount) Swap(i int, j int) { a[i], a[j] = a[j], a[i] }
-func (a ByCount) Less(i int, j int) bool {
-	if (a[i].cnt == a[j].cnt) {
-		return a[i].val < a[j].val
-	} else {
-		return a[i].cnt < a[j].cnt
-	}
-}
+func (a ByCount) Less(i int, j int) bool { return a[i].cnt < a[j].cnt }
 
 
 func main() {
@@ -50,7 +44,7 @@ func main() {
 	rect := img.Bounds()
 	rb := rect.Max
 	fmt.Println("Rect: %x", rect)
-	println("--------------------")
+	println("=======================")
 
 	colors := make(map[uint32]int)
 	
@@ -84,15 +78,14 @@ func main() {
 	}
 
 	sort.Sort(ByCount(ccs))
-	println(fmt.Sprintf("ColorCounter.length: %d", len(ccs)))
-	println("--------------------")
+	println(ccs)
 
 	for _, cc := range ccs {
 		println(fmt.Sprintf("color: %7x  -->  count: %6d", cc.val, cc.cnt))
 		// fmt.Sprintf("val: %12d, cnt: %6d", cc.val, cc.cnt)
 	}
 	pixelCnt := rb.X * rb.Y
-	println("----------------------------------------")
+	println("------------------------------")
 	last2_cnt := ccs[idx-1].cnt + ccs[idx-2].cnt
 	println(fmt.Sprintf(" > total==pixelCnt -> %t \n > maxCnt=%d, pixelCnt=%d \n >> prec=%f",
 		total==pixelCnt,

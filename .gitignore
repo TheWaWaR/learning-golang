@@ -3,3 +3,4 @@
 *.swp
 *.py[co]
 *.bin
+flymake_*

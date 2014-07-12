@@ -11,35 +11,32 @@ import (
 
 
 type WorkerInterface interface {
-	work(chan bool)
-	finish(chan bool)
+	// ::See: http://tech.t9i.in/2014/01/inheritance-semantics-in-go/
+	work(self WorkerInterface, resp chan interface{})
+	finish(resp chan interface{}, result interface{})
 }
 
-type Worker struct {
-	tag string
+
+type WorkerBase struct {}
+
+func (wb *WorkerBase) work(self WorkerInterface, resp chan interface{}) {
+	// log.Printf("call `WorkerBase.work()`\n")
+	panic("`work(chann interface{})` Not implement!")
 }
 
-func (self *Worker) work(done chan bool) {
-	log.Printf("<%s> is Working...\n", self.tag)
-	time.Sleep(2 * time.Second)
-	log.Printf("<%s> is Done...\n", self.tag)
-	self.finish(done)
-}
-
-func (self *Worker) finish(done chan bool) {
+func (wb *WorkerBase) finish(resp chan interface{}, result interface{}) {
+	/* For the case that `resp` channel already closed */
+	
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("@!!! <%s> channel done closed!", self.tag)
+			// >> Ignored
+			// log.Printf("@!!! <%s> channel done closed!", self.tag)
 		}
 	}()
-	done <- true
-	log.Printf("@~ <%s> done sent!", self.tag)
+	resp <- result
+	// log.Printf("@~ <%s> done sent!", self.tag)
 }
 
-type PoolRequest struct {
-	id int
-	worker Worker
-}
 
 // Pool state
 const (
@@ -50,8 +47,9 @@ const (
 
 type Pool struct {
 	size int
-	requests chan PoolRequest
 	gracefully bool
+	request chan WorkerInterface
+	response chan interface{}
 	
 	_signal chan (chan bool)
 	_alive int
@@ -60,7 +58,7 @@ type Pool struct {
 }
 
 func (self *Pool) start() {
-	done := make(chan bool)
+	resp := make(chan interface{})
 	resume := make(chan bool)
 	aliveMutex := sync.Mutex{}
 	wg := sync.WaitGroup{}
@@ -84,15 +82,15 @@ func (self *Pool) start() {
 	go func () {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("`done`: Resume closed?: %q\n", r)
+				log.Printf("`resp`: Resume closed?: %q\n", r)
 			}
 		}()
 
 		for {
-			successed, ok := <- done
+			result, ok := <- resp
 			if ok {
+				self.response <- result // Forword result
 				wg.Done()
-				
 				aliveMutex.Lock()
 				touched := (self._alive == self.size)
 				self._alive -= 1
@@ -104,7 +102,7 @@ func (self *Pool) start() {
 					resume <- true
 				}
 
-				log.Printf("Worker done: successed=%t, alive=%d\n", successed, self._alive)
+				log.Printf("Worker done: result=%q, alive=%d\n", result, self._alive)
 			} else {
 				log.Printf("Close counter: alive=%d\n", self._alive)
 				break
@@ -120,11 +118,11 @@ func (self *Pool) start() {
 				self._state = PoolStopping
 				log.Printf("...... Stopping pool\n")
 				if !self.gracefully {
-					close(done)
+					close(resp)
 					close(resume)
 				}
 				close(self._signal)
-				close(self.requests)
+				close(self.request)
 				_stopped <- true
 			} else {
 				log.Printf("self._signal closed!\n")
@@ -139,11 +137,11 @@ func (self *Pool) start() {
 			break
 		}
 
-		req, ok := <-self.requests // Block here.
+		worker, ok := <-self.request // Block here.
 		if ok {
 			wg.Add(1)
-			log.Printf("Start request: id=%d\n", req.id)
-			go req.worker.work(done)
+			// log.Printf("Start request: id=%d\n", req.id)
+			go worker.work(worker, resp)
 			
 			aliveMutex.Lock()
 			self._alive += 1
@@ -157,7 +155,7 @@ func (self *Pool) start() {
 				log.Printf(" >> Resumed pool!\n")
 			}
 		} else {
-			log.Printf("self.requests closed!\n")
+			log.Printf("self.request closed!\n")
 			break
 		}
 	}
@@ -165,16 +163,20 @@ func (self *Pool) start() {
 	if self.gracefully {
 		log.Printf("...... Waiting for all worker finished!\n")
 		wg.Wait()
-		close(done)
+		close(resp)
 		close(resume)
 	} else {
 		log.Printf(">> Force quit!\n")
 	}
-	
+
+	close(self.response)
 	self._state = PoolStopped
 	log.Printf("Oh, my lord. I'm back!\n")
 }
 
+func (self *Pool) apply(worker interface{}) {
+	self.request <- worker.(WorkerInterface)
+}
 
 func (self *Pool) stop() bool {
 	
@@ -200,17 +202,53 @@ func (self *Pool) stop() bool {
 	
 	return status
 }
+func (self *Pool) alive() int {
+	return self._alive
+}
 
+
+
+/* ============================================================================
+ *  Test section
+ * ==========================================================================*/
+type SomeWorker struct {
+	WorkerBase
+	tag string
+}
+
+func (sw *SomeWorker) work(self WorkerInterface, resp chan interface{}) {
+	// Call super method
+	// sw.WorkerBase.work(self, resp)
+	
+	log.Printf("<%s> is Working...\n", sw.tag)
+	time.Sleep(2 * time.Second)
+	log.Printf("<%s> is Done...\n", sw.tag)
+	self.finish(resp, true)
+}
 
 func test_1() {
-	pool := Pool{size: 2, gracefully: true}
-	pool.requests = make(chan PoolRequest)
+	pool_size := 4
+	pool := Pool{size: pool_size, gracefully: true}
+	pool.request = make(chan WorkerInterface)
+	pool.response = make(chan interface{})
+	
 	go pool.start()
-
+	go func() {
+		for {
+			result, ok := <- pool.response
+			if ok {
+				log.Printf("#### pool.response: %q\n", result)
+			} else {
+				log.Printf("#### pool.response Closed!\n")
+				break
+			}
+		}
+	} ()
 	for i := 1; i <= 10; i++ {
-		req := PoolRequest{i, Worker{fmt.Sprintf("THE {%d} WORKER", i)}}
-		pool.requests <- req
+		worker := &SomeWorker{tag:fmt.Sprintf("THE {%d} WORKER", i)}
+		pool.apply(worker)
 	}
+	log.Printf("pool.alive: %d\n", pool.alive())
 	log.Printf("---------\n")
 	pool.stop()
 	pool.stop()

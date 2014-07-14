@@ -10,16 +10,16 @@ import (
 )
 
 
-type WorkerInterface interface {
+type Worker interface {
 	// ::See: http://tech.t9i.in/2014/01/inheritance-semantics-in-go/
-	work(self WorkerInterface, resp chan interface{})
+	work(worker Worker, resp chan interface{})
 	finish(resp chan interface{}, result interface{})
 }
 
 
 type WorkerBase struct {}
 
-func (wb *WorkerBase) work(self WorkerInterface, resp chan interface{}) {
+func (wb *WorkerBase) work(worker Worker, resp chan interface{}) {
 	// log.Printf("call `WorkerBase.work()`\n")
 	panic("`work(chann interface{})` Not Implemented!")
 }
@@ -30,11 +30,11 @@ func (wb *WorkerBase) finish(resp chan interface{}, result interface{}) {
 	defer func() {
 		if r := recover(); r != nil {
 			// >> Ignored
-			// log.Printf("@!!! <%s> channel done closed!", self.tag)
+			// log.Printf("@!!! <%s> channel done closed!", wb.tag)
 		}
 	}()
 	resp <- result
-	// log.Printf("@~ <%s> done sent!", self.tag)
+	// log.Printf("@~ <%s> done sent!", wb.tag)
 }
 
 
@@ -50,7 +50,7 @@ type Pool struct {
 	gracefully bool
 	handler func(result interface{})
 	
-	_request chan WorkerInterface
+	_request chan Worker
 	_response chan interface{}
 	_alive int
 	_state int
@@ -75,7 +75,7 @@ func (p *Pool) init() {
 	p._state = PoolStarted
 	p._signal = make(chan (chan bool))
 	p._mutex = &sync.Mutex{}
-	p._request = make(chan WorkerInterface)
+	p._request = make(chan Worker)
 	p._response = make(chan interface{})
 }
 
@@ -221,7 +221,7 @@ func (p *Pool) start() {
 }
 
 func (p *Pool) apply(worker interface{}) {
-	p._request <- worker.(WorkerInterface)
+	p._request <- worker.(Worker)
 }
 
 func (p *Pool) stop() bool {
@@ -269,14 +269,14 @@ type SomeWorker struct {
 	sleep time.Duration
 }
 
-func (sw *SomeWorker) work(self WorkerInterface, resp chan interface{}) {
+func (sw *SomeWorker) work(worker Worker, resp chan interface{}) {
 	// Call super method
-	// sw.WorkerBase.work(self, resp)
+	// sw.WorkerBase.work(worker, resp)
 	
 	log.Printf("<%s> is Working...\n", sw.tag)
 	time.Sleep(sw.sleep * time.Second)
 	log.Printf("<%s> is Done...\n", sw.tag)
-	self.finish(resp, true)
+	worker.finish(resp, true)
 }
 
 func test_1() {
@@ -285,9 +285,9 @@ func test_1() {
 		size : pool_size,
 		gracefully : true,
 	}
-	// pool.handler = func(result interface{}) {
-	// 	log.Printf("^Got result: [%t]\n", result)
-	// }
+	pool.handler = func(result interface{}) {
+		log.Printf("^Got result: [%t]\n", result)
+	}
 	pool.init()
 	go pool.start()
 	

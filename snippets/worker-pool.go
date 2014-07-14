@@ -153,7 +153,9 @@ func (p *Pool) start() {
 		for {
 			result, ok := <- resp
 			if ok {
-				p._response <- result // Forword result
+				if p.handler != nil {
+					p._response <- result // Forword result
+				}
 				wg.Done()
 				aliveMutex.Lock()
 				touched := (p._alive == p.size)
@@ -283,9 +285,9 @@ func test_1() {
 		size : pool_size,
 		gracefully : true,
 	}
-	pool.handler = func(result interface{}) {
-		log.Printf("^Got result: [%t]\n", result)
-	}
+	// pool.handler = func(result interface{}) {
+	// 	log.Printf("^Got result: [%t]\n", result)
+	// }
 	pool.init()
 	go pool.start()
 	

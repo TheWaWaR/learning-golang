@@ -63,9 +63,9 @@ func (p *Pool) init() {
 	if p.size < 1 {
 		panic(fmt.Sprintf("Invalid `Pool.size` = %d\n", p.size))
 	}
-	if p.handler == nil {
-		panic("You must set `Pool.handler` !\n")
-	}
+	// if p.handler == nil {
+	// 	panic("You must set `Pool.handler` !\n")
+	// }
 	
 	if p.gracefully != true {
 		p.gracefully = false
@@ -80,7 +80,7 @@ func (p *Pool) init() {
 }
 
 func (p *Pool) start() {
-	if (p.size < 1 || p.handler == nil ||
+	if (p.size < 1 ||
 		p._alive != 0 || p._state < PoolStarted ||
 		p._signal == nil || p._mutex == nil || 
 		p._request == nil || p._response == nil) {
@@ -99,23 +99,46 @@ func (p *Pool) start() {
 	}()
 
 	// Response handler
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("`p.response`: closed: %q\n", r)
+	if p.handler != nil {
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("`p._response`: closed: %q\n", r)
+				}
+			}()
+
+			for{
+				result, ok := <- p._response
+				if ok {
+					p.handler(result)
+					log.Printf("#### pool._response: %q\n", result)
+				} else {
+					log.Printf("#### pool._response Closed!\n")
+					break
+				}
+
 			}
 		}()
+	}
 
-		for{
-			result, ok := <- p._response
+	// Signal handler
+	go func () {
+		for {
+			_stopped, ok := <- p._signal
 			if ok {
-				p.handler(result)
-				log.Printf("#### pool.response: %q\n", result)
+				p._state = PoolStopping
+				log.Printf("...... Stopping pool\n")
+				if !p.gracefully {
+					close(resp)
+					close(resume)
+				}
+				close(p._signal)
+				close(p._request)
+				_stopped <- true
 			} else {
-				log.Printf("#### pool.response Closed!\n")
+				log.Printf("p._signal closed!\n")
 				break
 			}
-
 		}
 	}()
 	
@@ -146,27 +169,6 @@ func (p *Pool) start() {
 				log.Printf("Worker done: result=%q, alive=%d\n", result, p._alive)
 			} else {
 				log.Printf("Close counter: alive=%d\n", p._alive)
-				break
-			}
-		}
-	}()
-
-	// Signal handler
-	go func () {
-		for {
-			_stopped, ok := <- p._signal
-			if ok {
-				p._state = PoolStopping
-				log.Printf("...... Stopping pool\n")
-				if !p.gracefully {
-					close(resp)
-					close(resume)
-				}
-				close(p._signal)
-				close(p._request)
-				_stopped <- true
-			} else {
-				log.Printf("p._signal closed!\n")
 				break
 			}
 		}

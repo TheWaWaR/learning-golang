@@ -48,40 +48,49 @@ const (
 type Pool struct {
 	size int
 	gracefully bool
-	handler func(interface{})
+	handler func(result interface{})
 	
-	request chan WorkerInterface
-	response chan interface{}
+	_request chan WorkerInterface
+	_response chan interface{}
 	_alive int
 	_state int
 	_signal chan (chan bool)
-	_stopMutex sync.Mutex
+	_mutex *sync.Mutex
 }
 
-func NewPool(size int, gracefully bool, handler func(interface{})) *Pool{
-	return &Pool{
-		size: size,
-		gracefully: gracefully,
-		request: make(chan WorkerInterface),
-		response: make(chan interface{}),
-		handler: handler,
+func (p *Pool) init() {
+	// Check attributes
+	if p.size < 1 {
+		panic(fmt.Sprintf("Invalid `Pool.size` = %d\n", p.size))
 	}
-}
-
-func (p *Pool) start() {
-	resp := make(chan interface{})
-	resume := make(chan bool)
-	aliveMutex := sync.Mutex{}
-	wg := sync.WaitGroup{}
+	if p.handler == nil {
+		panic("You must set `Pool.handler` !\n")
+	}
 	
 	if p.gracefully != true {
 		p.gracefully = false
 	}
-
-	p._signal = make(chan (chan bool))
+	
 	p._alive = 0
 	p._state = PoolStarted
-	p._stopMutex = sync.Mutex{}
+	p._signal = make(chan (chan bool))
+	p._mutex = &sync.Mutex{}
+	p._request = make(chan WorkerInterface)
+	p._response = make(chan interface{})
+}
+
+func (p *Pool) start() {
+	if (p.size < 1 || p.handler == nil ||
+		p._alive != 0 || p._state < PoolStarted ||
+		p._signal == nil || p._mutex == nil || 
+		p._request == nil || p._response == nil) {
+		panic("You must call `Pool.init()` first!\n")
+	}
+	
+	resp := make(chan interface{})
+	resume := make(chan bool)
+	aliveMutex := sync.Mutex{}
+	wg := sync.WaitGroup{}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -98,7 +107,7 @@ func (p *Pool) start() {
 		}()
 
 		for{
-			result, ok := <-p.response
+			result, ok := <- p._response
 			if ok {
 				p.handler(result)
 				log.Printf("#### pool.response: %q\n", result)
@@ -121,7 +130,7 @@ func (p *Pool) start() {
 		for {
 			result, ok := <- resp
 			if ok {
-				p.response <- result // Forword result
+				p._response <- result // Forword result
 				wg.Done()
 				aliveMutex.Lock()
 				touched := (p._alive == p.size)
@@ -154,7 +163,7 @@ func (p *Pool) start() {
 					close(resume)
 				}
 				close(p._signal)
-				close(p.request)
+				close(p._request)
 				_stopped <- true
 			} else {
 				log.Printf("p._signal closed!\n")
@@ -169,7 +178,7 @@ func (p *Pool) start() {
 			break
 		}
 
-		worker, ok := <-p.request // Block here.
+		worker, ok := <-p._request // Block here.
 		if ok {
 			wg.Add(1)
 			// log.Printf("Start request: id=%d\n", req.id)
@@ -187,7 +196,7 @@ func (p *Pool) start() {
 				log.Printf(" >> Resumed pool!\n")
 			}
 		} else {
-			log.Printf("p.request closed!\n")
+			log.Printf("p._request closed!\n")
 			break
 		}
 	}
@@ -202,13 +211,13 @@ func (p *Pool) start() {
 		log.Printf(">> Force quit!\n")
 	}
 
-	close(p.response)
+	close(p._response)
 	p._state = PoolStopped
 	log.Printf("Oh, my lord. I'm back!\n")
 }
 
 func (p *Pool) apply(worker interface{}) {
-	p.request <- worker.(WorkerInterface)
+	p._request <- worker.(WorkerInterface)
 }
 
 func (p *Pool) stop() bool {
@@ -216,7 +225,7 @@ func (p *Pool) stop() bool {
 	var status bool
 	log.Printf("...... Trying close pool\n")
 	
-	p._stopMutex.Lock()
+	p._mutex.Lock()
 	switch p._state {
 	case PoolStopped:
 		log.Printf("Pool already stopped.\n")
@@ -231,14 +240,14 @@ func (p *Pool) stop() bool {
 		<-stopped
 		status = true
 	}
-	p._stopMutex.Unlock()
+	p._mutex.Unlock()
 	
 	return status
 }
 
-func (p *Pool) terminate() {
+func (p *Pool) terminate() bool {
 	p.gracefully = false
-	p.stop()
+	return p.stop()
 }
 
 func (p *Pool) alive() int {
@@ -267,28 +276,26 @@ func (sw *SomeWorker) work(self WorkerInterface, resp chan interface{}) {
 }
 
 func test_1() {
-	pool_size := 3
-	pool := NewPool(pool_size, true, func(result interface{}) {
+	pool_size := 4
+	pool := Pool{
+		size : pool_size,
+		gracefully : true,
+	}
+	pool.handler = func(result interface{}) {
 		log.Printf("^Got result: [%t]\n", result)
-	})
-	// pool := Pool{
-	// 	size : pool_size,
-	// 	gracefully : true,
-	// 	request : make(chan WorkerInterface),
-	// 	response : make(chan interface{}),
-	// }
-	// pool.handler = func(result interface{}) {
-	// 	log.Printf("^Got result: [%t]\n", result)
-	// }
+	}
+	pool.init()
 	go pool.start()
+	
 	// Send request
-	for i := 1; i <= 5; i++ {
+	for i := 1; i <= 8; i++ {
 		worker := &SomeWorker{
 			tag : fmt.Sprintf("THE {%d} WORKER", i),
 			sleep: time.Duration(i),
 		}
 		pool.apply(worker)
 	}
+	
 	log.Printf("pool.alive: %d\n", pool.alive())
 	log.Printf("---------\n")
 	pool.stop()

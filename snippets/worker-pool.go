@@ -9,6 +9,26 @@ import (
 	"fmt"
 )
 
+/* ============================================================================
+
+ Features
+ ========
+
+  Worker:
+  -------
+   * Implement functionality by subtype `WorkerBase`
+   * Wait for result, timeout terminate
+   * Send result back to pool by response channel
+
+  Pool:
+  -----
+   * Pool has size, once reached the max `apply()` blocked
+   * Pool can stop
+   * If `handler` not nil, invoke `handler` by args from response channel
+   * If `gracefully` set to true, we must wait for all workers done
+   
+ * ==========================================================================*/
+
 
 type Worker interface {
 	// ::See: http://tech.t9i.in/2014/01/inheritance-semantics-in-go/

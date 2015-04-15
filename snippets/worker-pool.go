@@ -9,6 +9,26 @@ import (
 	"fmt"
 )
 
+/* ============================================================================
+
+ Features
+ ========
+
+  Worker:
+  -------
+   * Implement functionality by subtype `WorkerBase`
+   * Wait for result, timeout terminate
+   * Send result back to pool by response channel
+
+  Pool:
+  -----
+   * Pool has size, once reached the max `apply()` blocked
+   * Pool can stop
+   * If `handler` not nil, invoke `handler` by args from response channel
+   * If `gracefully` set to true, we must wait for all workers done
+   
+ * ==========================================================================*/
+
 
 type Worker interface {
 	// ::See: http://tech.t9i.in/2014/01/inheritance-semantics-in-go/
@@ -17,7 +37,9 @@ type Worker interface {
 }
 
 
-type WorkerBase struct {}
+type WorkerBase struct {
+	result interface{}
+}
 
 func (wb *WorkerBase) work(worker Worker, resp chan interface{}) {
 	// log.Printf("call `WorkerBase.work()`\n")
@@ -26,13 +48,14 @@ func (wb *WorkerBase) work(worker Worker, resp chan interface{}) {
 
 func (wb *WorkerBase) finish(resp chan interface{}, result interface{}) {
 	/* For the case that `resp` channel already closed */
-	
 	defer func() {
 		if r := recover(); r != nil {
 			// >> Ignored
+			log.Printf("<< `resp` channel already closed! >>\n")
 			// log.Printf("@!!! <%s> channel done closed!", wb.tag)
 		}
 	}()
+	wb.result = result
 	resp <- result
 	// log.Printf("@~ <%s> done sent!", wb.tag)
 }
@@ -107,7 +130,7 @@ func (p *Pool) start() {
 				}
 			}()
 
-			for{
+			for {
 				result, ok := <- p._response
 				if ok {
 					p.handler(result)
@@ -265,6 +288,7 @@ func (p *Pool) alive() int {
  * ==========================================================================*/
 type SomeWorker struct {
 	WorkerBase
+	timeout int		// ::TODO
 	tag string
 	sleep time.Duration
 }
@@ -280,9 +304,8 @@ func (sw *SomeWorker) work(worker Worker, resp chan interface{}) {
 }
 
 func test_1() {
-	pool_size := 4
 	pool := Pool{
-		size : pool_size,
+		size : 4,
 		gracefully : true,
 	}
 	pool.handler = func(result interface{}) {
